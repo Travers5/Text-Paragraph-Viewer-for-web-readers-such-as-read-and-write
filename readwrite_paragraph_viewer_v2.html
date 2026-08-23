@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paragraph Text Viewer for Read&Write</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #52606d;
+      --border: #c8d1dc;
+      --accent: #075ea8;
+      --hover: #fff4c2;
+      --focus: #dceeff;
+      --error: #a32121;
+      --success: #176b35;
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+      overflow-y: auto;
+    }
+    header {
+      background: #17324d;
+      color: white;
+      padding: 18px 24px;
+    }
+    header h1 { margin: 0 0 5px; font-size: 1.45rem; }
+    header p { margin: 0; color: #e5edf5; }
+    .controls {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      margin: 0;
+      padding: 14px 24px;
+      background: rgba(255,255,255,.98);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+    .control-grid {
+      display: grid;
+      grid-template-columns: minmax(230px, 1.4fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+      gap: 12px;
+      align-items: end;
+    }
+    label { display: block; font-weight: 700; font-size: .9rem; }
+    input[type="file"], select, button {
+      width: 100%;
+      margin-top: 5px;
+      min-height: 40px;
+      border: 1px solid #8b98a7;
+      border-radius: 5px;
+      background: white;
+      color: var(--text);
+      font: inherit;
+    }
+    input[type="file"], select { padding: 7px; }
+    button {
+      padding: 8px 15px;
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(.92); }
+    .secondary-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 12px;
+      color: var(--muted);
+    }
+    .secondary-options label { font-weight: 400; }
+    .secondary-options input { margin-right: 5px; }
+    #status {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-left: 4px solid var(--accent);
+      background: #edf5fc;
+      overflow-wrap: anywhere;
+    }
+    #status.success { border-color: var(--success); background: #ebf7ef; }
+    #status.error { border-color: var(--error); background: #fff0f0; color: var(--error); }
+    main { width: min(1100px, calc(100% - 32px)); margin: 20px auto 60px; }
+    #documentInfo {
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: .92rem;
+    }
+    #output {
+      min-height: 320px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 22px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.06);
+      overflow-wrap: anywhere;
+    }
+    .placeholder { color: var(--muted); text-align: center; padding: 80px 20px; }
+    .segment {
+      display: block;
+      margin: 0 0 12px;
+      padding: 9px 11px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      word-break: normal;
+      overflow-wrap: anywhere;
+    }
+    .segment:hover { background: var(--hover); border-color: #d5ad24; }
+    .segment:focus { outline: 3px solid var(--accent); background: var(--focus); }
+    .separator-segment {
+      text-align: center;
+      color: var(--muted);
+      font-family: Consolas, monospace;
+    }
+    .heading-segment { font-weight: 700; font-size: 1.15em; }
+    @media (max-width: 850px) {
+      .control-grid { grid-template-columns: 1fr; }
+      .controls { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Paragraph Text Viewer</h1>
+    <p>Open a local text or Markdown file and present it as separately readable segments.</p>
+  </header>
+
+  <section class="controls" aria-label="Document controls">
+    <div class="control-grid">
+      <label>
+        1. Choose a text document
+        <input id="fileInput" type="file" accept=".txt,.md,.markdown,.text,.log,.csv,.tsv,.rst,.asc,text/plain,text/markdown">
+      </label>
+      <label>
+        2. Paragraph detection
+        <select id="splitMode">
+          <option value="blank">Blank lines (one or more empty lines)</option>
+          <option value="line">Every non-empty line</option>
+          <option value="wrapped">Wrapped text: join lines, break on blank lines</option>
+          <option value="headings">Blank lines and likely headings</option>
+          <option value="symbols">Blank lines and symbol separators</option>
+          <option value="all">All detection methods</option>
+          <option value="sentences">Sentence groups</option>
+        </select>
+      </label>
+      <label>
+        3. HTML structure for Read&amp;Write
+        <select id="structureMode">
+          <option value="paragraph">Separate paragraph elements</option>
+          <option value="section">Separate section and paragraph elements</option>
+          <option value="article">Separate article elements</option>
+          <option value="textbox">Separate ARIA text boxes</option>
+          <option value="headingmix">Headings plus paragraph elements</option>
+        </select>
+      </label>
+      <button id="reprocessButton" type="button">Reprocess document</button>
+    </div>
+
+    <div class="secondary-options">
+      <label><input id="focusable" type="checkbox" checked> Make each segment keyboard-focusable</label>
+      <label><input id="preserveSeparators" type="checkbox" checked> Keep symbol separator lines</label>
+      <label><input id="largeText" type="checkbox"> Larger display text</label>
+    </div>
+    <div id="status" role="status" aria-live="polite">No file loaded. Choose a file using the control above.</div>
+  </section>
+
+  <main>
+    <div id="documentInfo"></div>
+    <div id="output" aria-label="Loaded document">
+      <div class="placeholder">The selected document will appear here. This area supports normal page scrolling, including long documents.</div>
+    </div>
+  </main>
+
+  <script>
+  "use strict";
+
+  const fileInput = document.getElementById("fileInput");
+  const splitMode = document.getElementById("splitMode");
+  const structureMode = document.getElementById("structureMode");
+  const reprocessButton = document.getElementById("reprocessButton");
+  const focusable = document.getElementById("focusable");
+  const preserveSeparators = document.getElementById("preserveSeparators");
+  const largeText = document.getElementById("largeText");
+  const output = document.getElementById("output");
+  const statusBox = document.getElementById("status");
+  const documentInfo = document.getElementById("documentInfo");
+
+  let rawText = "";
+  let loadedFile = null;
+
+  function loadSetting(element, key, fallback) {
+    const saved = localStorage.getItem(key);
+    if (element.type === "checkbox") element.checked = saved === null ? fallback : saved === "true";
+    else element.value = saved || fallback;
+  }
+
+  loadSetting(splitMode, "ptvSplitMode", "blank");
+  loadSetting(structureMode, "ptvStructureMode", "paragraph");
+  loadSetting(focusable, "ptvFocusable", true);
+  loadSetting(preserveSeparators, "ptvKeepSeparators", true);
+  loadSetting(largeText, "ptvLargeText", false);
+
+  function saveSettings() {
+    localStorage.setItem("ptvSplitMode", splitMode.value);
+    localStorage.setItem("ptvStructureMode", structureMode.value);
+    localStorage.setItem("ptvFocusable", String(focusable.checked));
+    localStorage.setItem("ptvKeepSeparators", String(preserveSeparators.checked));
+    localStorage.setItem("ptvLargeText", String(largeText.checked));
+  }
+
+  function setStatus(message, type) {
+    statusBox.textContent = message;
+    statusBox.className = type || "";
+  }
+
+  function normalise(text) {
+    return text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").replace(/\u0000/g, "");
+  }
+
+  function isSeparator(line) {
+    const t = line.trim();
+    return /^([=+\-_*~#])\1{2,}$/.test(t) || /^(?:[=+\-_*~#]\s*){3,}$/.test(t);
+  }
+
+  function isLikelyHeading(line) {
+    const t = line.trim();
+    if (!t || t.length > 140) return false;
+    if (/^#{1,6}\s+\S/.test(t)) return true;
+    if (/^[A-Z][A-Z0-9 '&(),.:\-]{3,}$/.test(t)) return true;
+    if (/^(chapter|part|section|book|appendix)\b/i.test(t)) return true;
+    if (/^\d+(?:\.\d+)*[.)]?\s+\S/.test(t) && t.length < 100) return true;
+    return false;
+  }
+
+  function addSegment(list, text, kind) {
+    const cleaned = text.replace(/^\n+|\n+$/g, "");
+    if (cleaned.trim()) list.push({ text: cleaned, kind: kind || "text" });
+  }
+
+  function splitDocument(text, mode) {
+    const clean = normalise(text);
+    const segments = [];
+
+    if (mode === "line") {
+      clean.split("\n").forEach(line => {
+        if (!line.trim()) return;
+        addSegment(segments, line, isSeparator(line) ? "separator" : (isLikelyHeading(line) ? "heading" : "text"));
+      });
+      return segments;
+    }
+
+    if (mode === "blank" || mode === "wrapped") {
+      clean.split(/\n[\t ]*\n+/).forEach(block => {
+        let value = block.trim();
+        if (mode === "wrapped") value = value.replace(/(?<![.!?:;])\n(?=\S)/g, " ").replace(/\n+/g, " ");
+        addSegment(segments, value, isLikelyHeading(value) ? "heading" : "text");
+      });
+      return segments;
+    }
+
+    if (mode === "sentences") {
+      const maxSentences = 3;
+      const sentences = clean.replace(/\n+/g, " ").match(/[^.!?]+(?:[.!?]+["')\]]*|$)/g) || [clean];
+      for (let i = 0; i < sentences.length; i += maxSentences) {
+        addSegment(segments, sentences.slice(i, i + maxSentences).join(" ").trim(), "text");
+      }
+      return segments;
+    }
+
+    const lines = clean.split("\n");
+    let buffer = [];
+    const flush = () => {
+      if (buffer.length) addSegment(segments, buffer.join("\n"), "text");
+      buffer = [];
+    };
+
+    for (const line of lines) {
+      const blank = !line.trim();
+      const separator = isSeparator(line);
+      const heading = isLikelyHeading(line);
+      const shouldSplitHeading = mode === "headings" || mode === "all";
+      const shouldSplitSymbol = mode === "symbols" || mode === "all";
+
+      if (blank) {
+        flush();
+      } else if (separator && shouldSplitSymbol) {
+        flush();
+        if (preserveSeparators.checked) addSegment(segments, line, "separator");
+      } else if (heading && shouldSplitHeading) {
+        flush();
+        addSegment(segments, line, "heading");
+      } else {
+        buffer.push(line);
+      }
+    }
+    flush();
+    return segments;
+  }
+
+  function createSegmentElement(segment, index) {
+    const mode = structureMode.value;
+    let outer;
+    let textTarget;
+
+    if (mode === "section") {
+      outer = document.createElement("section");
+      textTarget = document.createElement(segment.kind === "heading" ? "h2" : "p");
+      outer.appendChild(textTarget);
+    } else if (mode === "article") {
+      outer = document.createElement("article");
+      textTarget = outer;
+    } else if (mode === "textbox") {
+      outer = document.createElement("div");
+      outer.setAttribute("role", "textbox");
+      outer.setAttribute("aria-readonly", "true");
+      outer.setAttribute("aria-label", "Text segment " + (index + 1));
+      textTarget = outer;
+    } else if (mode === "headingmix" && segment.kind === "heading") {
+      outer = document.createElement("h2");
+      textTarget = outer;
+    } else {
+      outer = document.createElement("p");
+      textTarget = outer;
+    }
+
+    outer.classList.add("segment");
+    if (segment.kind === "separator") outer.classList.add("separator-segment");
+    if (segment.kind === "heading") outer.classList.add("heading-segment");
+    outer.dataset.segmentNumber = String(index + 1);
+    if (focusable.checked) outer.tabIndex = 0;
+    textTarget.textContent = segment.text;
+    return outer;
+  }
+
+  function renderDocument() {
+    saveSettings();
+    if (!rawText) {
+      setStatus("A file has not yet been loaded, or the selected file is empty.", "error");
+      return;
+    }
+
+    setStatus("Processing document...", "");
+    output.replaceChildren();
+    output.style.fontSize = largeText.checked ? "1.2rem" : "1rem";
+
+    try {
+      const segments = splitDocument(rawText, splitMode.value);
+      if (!segments.length) throw new Error("No readable text segments were detected.");
+
+      const fragment = document.createDocumentFragment();
+      segments.forEach((segment, index) => fragment.appendChild(createSegmentElement(segment, index)));
+      output.appendChild(fragment);
+
+      const chars = rawText.length.toLocaleString();
+      const size = loadedFile ? formatBytes(loadedFile.size) : "unknown size";
+      documentInfo.textContent = `${loadedFile ? loadedFile.name : "Document"} | ${size} | ${chars} characters | ${segments.length.toLocaleString()} readable segments`;
+      setStatus(`Document loaded successfully. ${segments.length.toLocaleString()} separate segments are displayed below. Hover over the document text, not the controls.`, "success");
+    } catch (error) {
+      output.innerHTML = '<div class="placeholder">The document could not be displayed.</div>';
+      setStatus("Processing error: " + error.message, "error");
+      console.error(error);
+    }
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes === 0) return "0 bytes";
+    const units = ["bytes", "KB", "MB", "GB"];
+    const place = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    return `${(bytes / Math.pow(1024, place)).toFixed(place === 0 ? 0 : 1)} ${units[place]}`;
+  }
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    loadedFile = file;
+    setStatus(`Loading ${file.name}...`, "");
+
+    const reader = new FileReader();
+    reader.onload = event => {
+      rawText = String(event.target.result || "");
+      if (!rawText.trim()) {
+        setStatus("The selected file appears to be empty or is not readable as plain text.", "error");
+        return;
+      }
+      renderDocument();
+      window.scrollTo({ top: document.querySelector("main").offsetTop - 10, behavior: "smooth" });
+    };
+    reader.onerror = () => setStatus("The browser could not read this file: " + (reader.error ? reader.error.message : "unknown error"), "error");
+    reader.readAsText(file, "UTF-8");
+  });
+
+  reprocessButton.addEventListener("click", renderDocument);
+  [splitMode, structureMode, focusable, preserveSeparators, largeText].forEach(control => {
+    control.addEventListener("change", () => {
+      saveSettings();
+      if (rawText) renderDocument();
+    });
+  });
+
+  window.addEventListener("error", event => {
+    setStatus("Page script error: " + event.message, "error");
+  });
+  </script>
+</body>
+</html>
